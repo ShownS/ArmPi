@@ -12,6 +12,9 @@ from ArmIK.ArmMoveIK import *
 import HiwonderSDK.Board as Board
 from CameraCalibration.CalibrationConfig import *
 
+import math
+import numpy as np
+
 if sys.version_info.major == 2:
     print('Please run this program with python3!')
     sys.exit(0)
@@ -283,113 +286,298 @@ def move():
             time.sleep(0.01)
 
 # Run child thread
-th = threading.Thread(target=move)
-th.setDaemon(True)
-th.start()
+# th = threading.Thread(target=move)
+# th.setDaemon(True)
+# th.start()
 
 t1 = 0
 roi = ()
 last_x, last_y = 0, 0
-def run(img):
-    global roi
-    global rect
-    global count
-    global track
-    global get_roi
-    global center_list
-    global __isRunning
-    global unreachable
-    global detect_color
-    global action_finish
-    global rotation_angle
-    global last_x, last_y
-    global world_X, world_Y
-    global world_x, world_y
-    global start_count_t1, t1
-    global start_pick_up, first_move
-    
-    img_copy = img.copy()
-    img_h, img_w = img.shape[:2]
-    cv2.line(img, (0, int(img_h / 2)), (img_w, int(img_h / 2)), (0, 0, 200), 1)
-    cv2.line(img, (int(img_w / 2), 0), (int(img_w / 2), img_h), (0, 0, 200), 1)
-    
-    if not __isRunning:
-        return img
-     
-    frame_resize = cv2.resize(img_copy, size, interpolation=cv2.INTER_NEAREST)
-    frame_gb = cv2.GaussianBlur(frame_resize, (11, 11), 11)
-    # If an identified object is detected in a certain area, the detection continues in that area until no object is detected.
-    if get_roi and start_pick_up:
-        get_roi = False
-        frame_gb = getMaskROI(frame_gb, roi, size)    
-    
-    frame_lab = cv2.cvtColor(frame_gb, cv2.COLOR_BGR2LAB)  # Convert image to Lab space
-    
-    area_max = 0
-    areaMaxContour = 0
-    if not start_pick_up:
-        for i in color_range:
-            if i in __target_color:
-                detect_color = i
-                frame_mask = cv2.inRange(frame_lab, color_range[detect_color][0], color_range[detect_color][1])  # Perform bitwise operations on the original image and the mask.
-                opened = cv2.morphologyEx(frame_mask, cv2.MORPH_OPEN, np.ones((6, 6), np.uint8))  # Open operation
-                closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, np.ones((6, 6), np.uint8))  # Closed operation
-                contours = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2]  # Find the outline
-                areaMaxContour, area_max = getAreaMaxContour(contours)  # Find maximum contour
-        if area_max > 2500:  # Largest area was found
-            rect = cv2.minAreaRect(areaMaxContour)
-            box = np.int0(cv2.boxPoints(rect))
 
-            roi = getROI(box) # Get ROI region
-            get_roi = True
 
-            img_centerx, img_centery = getCenter(rect, roi, size, square_length)  # Get center coordinates of blocks
-            world_x, world_y = convertCoordinate(img_centerx, img_centery, size) # Convert to real-world coordinates
-            
-            
-            cv2.drawContours(img, [box], -1, range_rgb[detect_color], 2)
-            cv2.putText(img, '(' + str(world_x) + ',' + str(world_y) + ')', (min(box[0, 0], box[2, 0]), box[2, 1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, range_rgb[detect_color], 1) # Draw center point
-            distance = math.sqrt(pow(world_x - last_x, 2) + pow(world_y - last_y, 2)) # To determine if a move has occurred, compare the coordinates with the previous coordinates.
-            last_x, last_y = world_x, world_y
-            track = True
-            #print(count,distance)
-            # Cumulative judgement
-            if action_finish:
-                if distance < 0.3:
-                    center_list.extend((world_x, world_y))
-                    count += 1
-                    if start_count_t1:
-                        start_count_t1 = False
-                        t1 = time.time()
-                    if time.time() - t1 > 1.5:
-                        rotation_angle = rect[2]
-                        start_count_t1 = True
-                        world_X, world_Y = np.mean(np.array(center_list).reshape(count, 2), axis=0)
-                        count = 0
-                        center_list = []
-                        start_pick_up = True
-                else:
-                    t1 = time.time()
-                    start_count_t1 = True
-                    count = 0
-                    center_list = []
-    return img
+
+class Perception:
+    def __init__(
+        self,
+        target_colors=("red", "green", "blue"),
+        min_area=2500,
+        vote_len=3,
+        stable_dist=0.5,
+        stable_time=1.0,
+        require_color_confirm=True,
+        ):
+        self.target_colors = tuple(target_colors)
+        self.min_area = float(min_area)
+
+        # voting
+        self.vote_len = int(vote_len)
+        self.color_votes = []          # list[int] codes 1/2/3
+        self.confirmed_color = "None"  # 'red'/'green'/'blue'/'None'
+        self.draw_color = range_rgb.get("black", (0, 0, 0))
+
+        # stability gate
+        self.stable_dist = float(stable_dist)
+        self.stable_time = float(stable_time)
+        self.require_color_confirm = bool(require_color_confirm)
+
+        self.last_x = None
+        self.last_y = None
+        self.center_list = []   # [x1,y1,x2,y2,...]
+        self.count = 0
+        self.t_stable_start = None
+
+        # ROI optimization state (borrowed idea from the stock scripts)
+        self.get_roi = False
+        self.roi = None
+
+        # final stable outputs
+        self.world_x = None
+        self.world_y = None
+        self.world_X_avg = None
+        self.world_Y_avg = None
+        self.rotation_angle = None
+        self.ready = False  # becomes True only when stable + (optionally) color confirmed
+
+    def reset(self):
+        self.color_votes = []
+        self.confirmed_color = "None"
+        self.draw_color = range_rgb.get("black", (0, 0, 0))
+
+        self.last_x = None
+        self.last_y = None
+        self.center_list = []
+        self.count = 0
+        self.t_stable_start = None
+
+        self.get_roi = False
+        self.roi = None
+
+        self.world_x = None
+        self.world_y = None
+        self.world_X_avg = None
+        self.world_Y_avg = None
+        self.rotation_angle = None
+        self.ready = False
+
+    def get_area_max_contour(self, contours):
+        area_max = 0
+        area_max_contour = None
+        for c in contours:
+            area = abs(cv2.contourArea(c))
+            if area > area_max:
+                area_max = area
+                area_max_contour = c
+        return area_max_contour, area_max
+
+    def _color_to_code(self, color_name):
+        if color_name == "red":
+            return 1
+        if color_name == "green":
+            return 2
+        if color_name == "blue":
+            return 3
+        return 0
+
+    def _code_to_color(self, code):
+        return {1: "red", 2: "green", 3: "blue"}.get(code, "None")
+
+    def preprocess(self, img_bgr):
+        img_resize = cv2.resize(img_bgr, size, interpolation=cv2.INTER_NEAREST)
+        img_blur = cv2.GaussianBlur(img_resize, (11, 11), 11)
+
+        # ROI optimization: if we have ROI from last time, restrict search area
+        if self.get_roi and self.roi is not None:
+            img_blur = getMaskROI(img_blur, self.roi, size)
+            self.get_roi = False  # one-shot mask like the original scripts
+
+        img_lab = cv2.cvtColor(img_blur, cv2.COLOR_BGR2LAB)
+        return img_resize, img_lab
+
+    def segment(self, img_lab, color_name):
+        mask = cv2.inRange(img_lab, color_range[color_name][0], color_range[color_name][1])
+        opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((6, 6), np.uint8))
+        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, np.ones((6, 6), np.uint8))
+        return closed
+
+    def find_best_candidate(self, img_lab):
+        best_color = None
+        best_contour = None
+        best_area = 0
+
+        for c in self.target_colors:
+            if c not in color_range:
+                continue
+            closed = self.segment(img_lab, c)
+            contours = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2]
+
+            contour, area = self.get_area_max_contour(contours)
+            if contour is not None and area > best_area:
+                best_area = area
+                best_contour = contour
+                best_color = c
+
+        return best_color, best_contour, best_area
+
+    def compute_pose(self, contour):
+        rect = cv2.minAreaRect(contour)
+        box = np.int0(cv2.boxPoints(rect))
+        roi = getROI(box)
+        img_centerx, img_centery = getCenter(rect, roi, size, square_length)
+        world_x, world_y = convertCoordinate(img_centerx, img_centery, size)
+        return rect, box, roi, world_x, world_y
+
+    def update_color_vote(self, observed_color):
+        code = self._color_to_code(observed_color)
+        if code == 0:
+            return  # ignore unknown
+
+        self.color_votes.append(code)
+
+        if len(self.color_votes) >= self.vote_len:
+            voted_code = int(round(float(np.mean(np.array(self.color_votes)))))
+            self.color_votes = []
+            self.confirmed_color = self._code_to_color(voted_code)
+            self.draw_color = range_rgb.get(self.confirmed_color, range_rgb.get("black", (0, 0, 0)))
+
+    def update_stability(self, rect, world_x, world_y):
+        if self.last_x is None:
+            self.last_x, self.last_y = world_x, world_y
+            self.t_stable_start = time.time()
+            self.center_list = [world_x, world_y]
+            self.count = 1
+            return False
+
+        distance = math.sqrt((world_x - self.last_x) ** 2 + (world_y - self.last_y) ** 2)
+        self.last_x, self.last_y = world_x, world_y
+
+        if distance < self.stable_dist:
+            if self.t_stable_start is None:
+                self.t_stable_start = time.time()
+
+            self.center_list.extend([world_x, world_y])
+            self.count += 1
+
+            if (time.time() - self.t_stable_start) >= self.stable_time:
+                # stable!
+                self.rotation_angle = rect[2]
+                pts = np.array(self.center_list).reshape(self.count, 2)
+                self.world_X_avg, self.world_Y_avg = np.mean(pts, axis=0)
+                return True
+            return False
+
+        # moved too much -> reset stability window
+        self.t_stable_start = time.time()
+        self.center_list = [world_x, world_y]
+        self.count = 1
+        return False
+
+    def process(self, img_bgr):
+        annotated = img_bgr.copy()
+        self.ready = False
+
+        img_resize, img_lab = self.preprocess(img_bgr)
+
+        best_color, best_contour, best_area = self.find_best_candidate(img_lab)
+        if best_contour is None or best_area < self.min_area:
+            # Optional: still show last confirmed color text
+            cv2.putText(
+                annotated,
+                f"Color: {self.confirmed_color}",
+                (10, annotated.shape[0] - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                self.draw_color,
+                2,
+            )
+            return annotated, None
+
+        rect, box, roi, world_x, world_y = self.compute_pose(best_contour)
+
+        # Update ROI for next frame
+        self.roi = roi
+        self.get_roi = True
+
+        # Annotate detected box + coords (like ColorTracking)
+        cv2.drawContours(annotated, [box], -1, range_rgb.get(best_color, (255, 255, 255)), 2)
+        cv2.putText(
+            annotated,
+            f"({world_x:.1f},{world_y:.1f})",
+            (min(box[0, 0], box[2, 0]), box[2, 1] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            range_rgb.get(best_color, (255, 255, 255)),
+            1,
+        )
+
+        # Voting update (extra capability)
+        self.update_color_vote(best_color)
+
+        # Stability update (extra capability)
+        stable_now = self.update_stability(rect, world_x, world_y)
+
+        # Decide "ready" (state machine / gating)
+        if stable_now:
+            self.world_x, self.world_y = world_x, world_y
+            if self.require_color_confirm:
+                self.ready = (self.confirmed_color in self.target_colors)
+            else:
+                self.ready = True
+
+        # Always display confirmed color text
+        cv2.putText(
+            annotated,
+            f"Color: {self.confirmed_color}",
+            (10, annotated.shape[0] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            self.draw_color,
+            2,
+        )
+
+        result = {
+            "best_color_raw": best_color,
+            "confirmed_color": self.confirmed_color,
+            "area": float(best_area),
+            "world_x": float(world_x),
+            "world_y": float(world_y),
+            "rotation_angle": float(rect[2]),
+            "stable": bool(stable_now),
+            "ready": bool(self.ready),
+            "world_X_avg": None if self.world_X_avg is None else float(self.world_X_avg),
+            "world_Y_avg": None if self.world_Y_avg is None else float(self.world_Y_avg),
+        }
+        return annotated, result
 
 if __name__ == '__main__':
     init()
     start()
-    __target_color = ('red', )
+
+    perception = Perception(target_colors=('red','green','blue'))
+
     my_camera = Camera.Camera()
     my_camera.camera_open()
-    while True:
-        img = my_camera.frame
-        if img is not None:
-            frame = img.copy()
-            Frame = run(frame)           
-            cv2.imshow('Frame', Frame)
-            key = cv2.waitKey(1)
-            if key == 27:
+
+    try:
+        while True:
+            img = my_camera.frame
+            if img is None:
+                time.sleep(0.01)
+                continue
+
+            annotated, detection = perception.process(img)
+
+            # Optional: print stable detection results
+            if detection and detection["stable"]:
+                print("Stable:", detection)
+
+            cv2.imshow('Perception Demo', annotated)
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27 or key == ord('q'):  # ESC or q
                 break
-    my_camera.camera_close()
-    cv2.destroyAllWindows()
+    finally:
+        my_camera.camera_close()
+        cv2.destroyAllWindows()
+        stop()
+        exit()
+
+
