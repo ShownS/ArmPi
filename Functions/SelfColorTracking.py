@@ -536,7 +536,7 @@ if __name__ == '__main__':
             if (not busy) and detection and (not ready_now):
                 wx = detection.get("world_x")
                 wy = detection.get("world_y")
-                if (wx is not None) and (wy is not None):
+                # if (wx is not None) and (wy is not None):
                     # motion.track(wx, wy)
 
             if (not busy) and ready_now and (not ready_prev):
