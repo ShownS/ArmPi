@@ -537,7 +537,7 @@ if __name__ == '__main__':
                 wx = detection.get("world_x")
                 wy = detection.get("world_y")
                 if (wx is not None) and (wy is not None):
-                    motion.track(wx, wy)
+                    # motion.track(wx, wy)
 
             if (not busy) and ready_now and (not ready_prev):
                 busy = True
@@ -550,6 +550,7 @@ if __name__ == '__main__':
                 if mode == "sort":
                     motion.sort(X, Y, rot, color)
 
+
                 elif mode == "stack":
                     motion.stack(X, Y, rot, color)
 
@@ -557,7 +558,9 @@ if __name__ == '__main__':
                     # choose a simple fixed destination (you can change this)
                     dest = (-15 + 0.5, 12 - 0.5, 1.5)
                     motion.pick_place(X, Y, rot, dest)
-
+                # after motion finishes
+                perception._reset_stability()
+                ready_prev = False
                 busy = False
 
             # Optional: print stable detection results
