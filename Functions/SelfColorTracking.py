@@ -12,6 +12,8 @@ from ArmIK.ArmMoveIK import *
 import HiwonderSDK.Board as Board
 from CameraCalibration.CalibrationConfig import *
 
+from typing import Dict, Tuple, Optional
+
 import math
 import numpy as np
 
@@ -88,465 +90,409 @@ def set_rgb(color):
         Board.RGB.setPixelColor(1, Board.PixelColor(0, 0, 0))
         Board.RGB.show()
 
-count = 0
-track = False
-_stop = False
-get_roi = False
-center_list = []
-first_move = True
-__isRunning = False
-detect_color = 'None'
-action_finish = True
-start_pick_up = False
-start_count_t1 = True
-# Reset variables
-def reset():
-    global count
-    global track
-    global _stop
-    global get_roi
-    global first_move
-    global center_list
-    global __isRunning
-    global detect_color
-    global action_finish
-    global start_pick_up
-    global __target_color
-    global start_count_t1
-    
-    count = 0
-    _stop = False
-    track = False
-    get_roi = False
-    center_list = []
-    first_move = True
-    __target_color = ()
-    detect_color = 'None'
-    action_finish = True
-    start_pick_up = False
-    start_count_t1 = True
+# Use threading.Event objects to control state
+_running = threading.Event()
+_running.set()
+_stop = threading.Event()
+_stop.clear()
 
-# App initialization call
+# Initialize arm position
 def init():
-    print("ColorTracking Init")
     initMove()
 
-# App start gameplay call
+# Start tracking
 def start():
-    global __isRunning
-    reset()
-    __isRunning = True
-    print("ColorTracking Start")
+    global _stop
+    _stop.clear()
+    _running.set()
 
-# App stop gameplay
+# Stop tracking
 def stop():
-    global _stop 
-    global __isRunning
-    _stop = True
-    __isRunning = False
-    print("ColorTracking Stop")
-
-# App exit gameplay call
-def exit():
     global _stop
-    global __isRunning
-    _stop = True
-    __isRunning = False
-    print("ColorTracking Exit")
+    _stop.set()
+    _running.clear()
+    initMove()
 
-rect = None
-size = (640, 480)
-rotation_angle = 0
-unreachable = False
-world_X, world_Y = 0, 0
-world_x, world_y = 0, 0
-# Arm movement thread
-def move():
-    global rect
-    global track
-    global _stop
-    global get_roi
-    global unreachable
-    global __isRunning
-    global detect_color
-    global action_finish
-    global rotation_angle
-    global world_X, world_Y
-    global world_x, world_y
-    global center_list, count
-    global start_pick_up, first_move
+class Motion:
+    def __init__(
+        self,
+        gripper_id: int = 1,
+        wrist_id: int = 2,
+        grip_closed: int = 500,
+        grip_open_delta: int = 280,
+        grip_release_delta: int = 200,
+        grip_relax_delta: int = 50,
+        wrist_center: int = 500,
+        home_xyz: Tuple[float, float, float] = (0, 10, 10),
+        home_rpy: Tuple[float, float, float] = (-30, -30, -90),
+        home_time_ms: int = 1500,
+        y_offset: float = 2.0,
+        track_z: float = 5.0,
+        track_time_ms: int = 20,
+        track_sleep_s: float = 0.02,
+        approach_z: float = 7.0,
+        pick_z: float = 2.0,
+        pick_z_sort: float = 1.5,
+        lift_z: float = 12.0,
+        place_hover_dz: float = 3.0,
+        place_hover_ms: int = 500,
+        place_ms: int = 1000,
+        stack_dz: float = 2.5,
+        stack_levels: int = 3,
+        stack_pause_s: float = 3.0,
+        sort_bins: Optional[Dict[str, Tuple[float, float, float]]] = None,
+        stack_base: Optional[Dict[str, Tuple[float, float, float]]] = None,
+    ):
+        self.AK = ArmIK()
+        self._lock = threading.Lock()
 
-    # Place blocks of different colors at coordinates (x,y,z)
-    coordinate = {
-        'red':   (-15 + 0.5, 12 - 0.5, 1.5),
-        'green': (-15 + 0.5, 6 - 0.5,  1.5),
-        'blue':  (-15 + 0.5, 0 - 0.5,  1.5),
-    }
-    while True:
-        if __isRunning:
-            if first_move and start_pick_up: # When an object is first detected               
-                action_finish = False
-                set_rgb(detect_color)
-                setBuzzer(0.1)               
-                result = AK.setPitchRangeMoving((world_X, world_Y - 2, 5), -90, -90, 0) # If the runtime parameter is not filled in, the runtime will be adaptive.
+        self.gripper_id = int(gripper_id)
+        self.wrist_id = int(wrist_id)
 
-                if result == False:
-                    unreachable = True
-                else:
-                    unreachable = False
-                time.sleep(result[2]/1000) # Time is the third parameter returned
-                start_pick_up = False
-                first_move = False
-                action_finish = True
-            elif not first_move and not unreachable: # This is not the first time an object has been detected
-                set_rgb(detect_color)
-                if track: # If it is the tracking stage
-                    if not __isRunning: # Stop and exit flag detection
-                        continue
-                    AK.setPitchRangeMoving((world_x, world_y - 2, 5), -90, -90, 0, 20)
-                    time.sleep(0.02)                    
-                    track = False
-                if start_pick_up: # if the object has not moved for a period of time, start clamping
-                    action_finish = False
-                    if not __isRunning: # Stop and exit flag detection
-                        continue
-                    Board.setBusServoPulse(1, servo1 - 280, 500)  # Claws open
-                    # Calculate the angle the gripper needs to rotate
-                    servo2_angle = getAngle(world_X, world_Y, rotation_angle)
-                    Board.setBusServoPulse(2, servo2_angle, 500)
-                    time.sleep(0.8)
-                    
-                    if not __isRunning:
-                        continue
-                    AK.setPitchRangeMoving((world_X, world_Y, 2), -90, -90, 0, 1000)  # Lower height
-                    time.sleep(2)
-                    
-                    if not __isRunning:
-                        continue
-                    Board.setBusServoPulse(1, servo1, 500)  # Clamp closing
-                    time.sleep(1)
-                    
-                    if not __isRunning:
-                        continue
-                    Board.setBusServoPulse(2, 500, 500)
-                    AK.setPitchRangeMoving((world_X, world_Y, 12), -90, -90, 0, 1000)  # Robotic arm raised
-                    time.sleep(1)
-                    
-                    if not __isRunning:
-                        continue
-                    # Sort and place the different colored blocks
-                    result = AK.setPitchRangeMoving((coordinate[detect_color][0], coordinate[detect_color][1], 12), -90, -90, 0)   
-                    time.sleep(result[2]/1000)
-                    
-                    if not __isRunning:
-                        continue
-                    servo2_angle = getAngle(coordinate[detect_color][0], coordinate[detect_color][1], -90)
-                    Board.setBusServoPulse(2, servo2_angle, 500)
-                    time.sleep(0.5)
+        self.grip_closed = int(grip_closed)
+        self.grip_open_delta = int(grip_open_delta)
+        self.grip_release_delta = int(grip_release_delta)
+        self.grip_relax_delta = int(grip_relax_delta)
 
-                    if not __isRunning:
-                        continue
-                    AK.setPitchRangeMoving((coordinate[detect_color][0], coordinate[detect_color][1], coordinate[detect_color][2] + 3), -90, -90, 0, 500)
-                    time.sleep(0.5)
-                    
-                    if not __isRunning:
-                        continue
-                    AK.setPitchRangeMoving((coordinate[detect_color]), -90, -90, 0, 1000)
-                    time.sleep(0.8)
-                    
-                    if not __isRunning:
-                        continue
-                    Board.setBusServoPulse(1, servo1 - 200, 500)  # Open claws, release block
-                    time.sleep(0.8)
-                    
-                    if not __isRunning:
-                        continue                    
-                    AK.setPitchRangeMoving((coordinate[detect_color][0], coordinate[detect_color][1], 12), -90, -90, 0, 800)
-                    time.sleep(0.8)
+        self.wrist_center = int(wrist_center)
 
-                    initMove()  # Return to initial position
-                    time.sleep(1.5)
+        self.home_xyz = tuple(home_xyz)
+        self.home_rpy = tuple(home_rpy)
+        self.home_time_ms = int(home_time_ms)
 
-                    detect_color = 'None'
-                    first_move = True
-                    get_roi = False
-                    action_finish = True
-                    start_pick_up = False
-                    set_rgb(detect_color)
-                else:
-                    time.sleep(0.01)
+        self.y_offset = float(y_offset)
+        self.track_z = float(track_z)
+        self.track_time_ms = int(track_time_ms)
+        self.track_sleep_s = float(track_sleep_s)
+
+        self.approach_z = float(approach_z)
+        self.pick_z = float(pick_z)
+        self.pick_z_sort = float(pick_z_sort)
+        self.lift_z = float(lift_z)
+
+        self.place_hover_dz = float(place_hover_dz)
+        self.place_hover_ms = int(place_hover_ms)
+        self.place_ms = int(place_ms)
+
+        self.stack_dz = float(stack_dz)
+        self.stack_levels = max(1, int(stack_levels))
+        self.stack_pause_s = float(stack_pause_s)
+
+        if sort_bins is None:
+            self.sort_bins = {
+                "red":   (-15 + 0.5, 12 - 0.5, 1.5),
+                "green": (-15 + 0.5,  6 - 0.5, 1.5),
+                "blue":  (-15 + 0.5,  0 - 0.5, 1.5),
+            }
         else:
-            if _stop:
-                _stop = False
-                Board.setBusServoPulse(1, servo1 - 70, 300)
-                time.sleep(0.5)
-                Board.setBusServoPulse(2, 500, 500)
-                AK.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)
-                time.sleep(1.5)
-            time.sleep(0.01)
+            self.sort_bins = dict(sort_bins)
 
-# Run child thread
-# th = threading.Thread(target=move)
-# th.setDaemon(True)
-# th.start()
+        if stack_base is None:
+            self.stack_base = {
+                "red":   (-15 + 1, -7 - 0.5, 1.5),
+                "green": (-15 + 1, -7 - 0.5, 1.5),
+                "blue":  (-15 + 1, -7 - 0.5, 1.5),
+            }
+        else:
+            self.stack_base = dict(stack_base)
 
-t1 = 0
-roi = ()
-last_x, last_y = 0, 0
+        self._stack_level = {c: 0 for c in ("red", "green", "blue")}
+        self.move_square = False
 
+    def _sleep_ms(self, ms: int):
+        time.sleep(max(0.0, ms) / 1000.0)
+
+    def _move_auto(self, xyz, rpy) -> bool:
+        result = self.AK.setPitchRangeMoving(xyz, rpy[0], rpy[1], rpy[2])
+        if result is False:
+            return False
+        self._sleep_ms(int(result[2]))
+        return True
+
+    def _move(self, xyz, rpy, ms: int) -> bool:
+        self.AK.setPitchRangeMoving(xyz, rpy[0], rpy[1], rpy[2], int(ms))
+        self._sleep_ms(ms)
+        return True
+
+    def buzz(self, s: float = 0.1):
+        Board.setBuzzer(0)
+        Board.setBuzzer(1)
+        time.sleep(max(0.0, s))
+        Board.setBuzzer(0)
+
+    def open(self, ms: int = 500):
+        pulse = self.grip_closed - self.grip_open_delta
+        Board.setBusServoPulse(self.gripper_id, int(pulse), int(ms))
+        self._sleep_ms(ms)
+
+    def close(self, ms: int = 500):
+        Board.setBusServoPulse(self.gripper_id, int(self.grip_closed), int(ms))
+        self._sleep_ms(ms)
+
+    def release(self, ms: int = 500):
+        pulse = self.grip_closed - self.grip_release_delta
+        Board.setBusServoPulse(self.gripper_id, int(pulse), int(ms))
+        self._sleep_ms(ms)
+
+    def wrist0(self, ms: int = 500):
+        Board.setBusServoPulse(self.wrist_id, int(self.wrist_center), int(ms))
+        self._sleep_ms(ms)
+
+    def wrist(self, x: float, y: float, angle_deg: float, ms: int = 500) -> int:
+        p = int(getAngle(x, y, angle_deg))
+        Board.setBusServoPulse(self.wrist_id, p, int(ms))
+        self._sleep_ms(ms)
+        return p
+
+    def home(self):
+        with self._lock:
+            relax = self.grip_closed - self.grip_relax_delta
+            Board.setBusServoPulse(self.gripper_id, int(relax), 300)
+            time.sleep(0.5)
+            self.wrist0(500)
+            self._move(self.home_xyz, self.home_rpy, self.home_time_ms)
+
+    def stop(self):
+        self.home()
+
+    def first(self, X: float, Y: float) -> bool:
+        with self._lock:
+            return self._move_auto((X, Y - self.y_offset, self.track_z), (-90, -90, 0))
+
+    def track(self, x: float, y: float) -> bool:
+        with self._lock:
+            self._move((x, y - self.y_offset, self.track_z), (-90, -90, 0), self.track_time_ms)
+        time.sleep(self.track_sleep_s)
+        return True
+
+    def approach(self, X: float, Y: float) -> bool:
+        with self._lock:
+            return self._move_auto((X, Y, self.approach_z), (-90, -90, 0))
+
+    def pick(self, X: float, Y: float, rot: float, z: Optional[float] = None) -> bool:
+        if z is None:
+            z = self.pick_z
+        with self._lock:
+            self.open(500)
+            self.wrist(X, Y, rot, 500)
+
+            self._move((X, Y, float(z)), (-90, -90, 0), 1000)
+            time.sleep(0.5)
+
+            self.close(500)
+            time.sleep(0.3)
+
+            self.wrist0(500)
+            self._move((X, Y, self.lift_z), (-90, -90, 0), 1000)
+            time.sleep(0.2)
+        return True
+
+    def place(self, x: float, y: float, z: float) -> bool:
+        with self._lock:
+            ok = self._move_auto((x, y, self.lift_z), (-90, -90, 0))
+            if not ok:
+                return False
+
+            self.wrist(x, y, -90, 500)
+
+            self._move((x, y, float(z) + self.place_hover_dz), (-90, -90, 0), self.place_hover_ms)
+            self._move((x, y, float(z)), (-90, -90, 0), self.place_ms)
+
+            self.release(500)
+            time.sleep(0.2)
+
+            self._move((x, y, self.lift_z), (-90, -90, 0), 800)
+            time.sleep(0.2)
+        return True
+
+    def pick_place(self, X: float, Y: float, rot: float, dest: Tuple[float, float, float], *, z: Optional[float] = None) -> bool:
+        if not self.approach(X, Y):
+            return False
+        if not self.pick(X, Y, rot, z=z):
+            return False
+        if not self.place(*dest):
+            return False
+        self.home()
+        return True
+
+    def sort(self, X: float, Y: float, rot: float, color: str, *, use_sort_height: bool = False) -> bool:
+        if color not in self.sort_bins:
+            return False
+
+        self.buzz(0.1)
+
+        if not self.approach(X, Y):
+            return False
+
+        z = self.pick_z_sort if use_sort_height else self.pick_z
+        if not self.pick(X, Y, rot, z=z):
+            return False
+
+        if not self.place(*self.sort_bins[color]):
+            return False
+
+        self.home()
+        return True
+
+    def _next_stack_z(self, color: str) -> float:
+        _, _, base_z = self.stack_base[color]
+        level = self._stack_level[color]
+        z = base_z + level * self.stack_dz
+
+        self._stack_level[color] = (level + 1) % self.stack_levels
+
+        if abs(z - base_z) < 1e-9:
+            self.move_square = True
+            time.sleep(self.stack_pause_s)
+            self.move_square = False
+
+        return z
+
+    def stack(self, X: float, Y: float, rot: float, color: str) -> bool:
+        if color not in self.stack_base:
+            return False
+
+        self.buzz(0.1)
+
+        bx, by, _ = self.stack_base[color]
+        bz = self._next_stack_z(color)
+
+        if not self.approach(X, Y):
+            return False
+        if not self.pick(X, Y, rot, z=self.pick_z):
+            return False
+        if not self.place(bx, by, bz):
+            return False
+
+        self.home()
+        return True
 
 
 class Perception:
-    def __init__(
-        self,
-        target_colors=("red", "green", "blue"),
-        min_area=2500,
-        vote_len=3,
-        stable_dist=0.5,
-        stable_time=1.0,
-        require_color_confirm=True,
-        ):
-        self.target_colors = tuple(target_colors)
-        self.min_area = float(min_area)
+    def __init__(self, target_colors=('red', 'green', 'blue')):
+        self.target_colors = target_colors
+        self.camera_angle = 0.0
 
-        # voting
-        self.vote_len = int(vote_len)
-        self.color_votes = []          # list[int] codes 1/2/3
-        self.confirmed_color = "None"  # 'red'/'green'/'blue'/'None'
-        self.draw_color = range_rgb.get("black", (0, 0, 0))
+        self.world_x = 0.0
+        self.world_y = 0.0
+        self.world_X = 0.0
+        self.world_Y = 0.0
 
-        # stability gate
-        self.stable_dist = float(stable_dist)
-        self.stable_time = float(stable_time)
-        self.require_color_confirm = bool(require_color_confirm)
+        self.rotation_angle = 0.0
+        self.detect_color = 'None'
 
-        self.last_x = None
-        self.last_y = None
-        self.center_list = []   # [x1,y1,x2,y2,...]
-        self.count = 0
-        self.t_stable_start = None
+        self.color_list = []
+        self.coordinate_list = []
 
-        # ROI optimization state (borrowed idea from the stock scripts)
-        self.get_roi = False
-        self.roi = None
-
-        # final stable outputs
-        self.world_x = None
-        self.world_y = None
+        self.stable_count = 0
+        self.confirmed_color = None
         self.world_X_avg = None
         self.world_Y_avg = None
-        self.rotation_angle = None
-        self.ready = False  # becomes True only when stable + (optionally) color confirmed
 
-    def reset(self):
-        self.color_votes = []
-        self.confirmed_color = "None"
-        self.draw_color = range_rgb.get("black", (0, 0, 0))
-
-        self.last_x = None
-        self.last_y = None
-        self.center_list = []
-        self.count = 0
-        self.t_stable_start = None
-
-        self.get_roi = False
-        self.roi = None
-
-        self.world_x = None
-        self.world_y = None
+    def _reset_stability(self):
+        self.color_list = []
+        self.coordinate_list = []
+        self.stable_count = 0
+        self.confirmed_color = None
         self.world_X_avg = None
         self.world_Y_avg = None
-        self.rotation_angle = None
-        self.ready = False
 
-    def get_area_max_contour(self, contours):
-        area_max = 0
+    def process(self, img):
+        if img is None:
+            return None, None
+
+        frame = img.copy()
+        frame_resize = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_NEAREST)
+
+        frame_gb = cv2.GaussianBlur(frame_resize, (3, 3), 3)
+        frame_lab = cv2.cvtColor(frame_gb, cv2.COLOR_BGR2LAB)
+
+        color_area_max = 0
         area_max_contour = None
-        for c in contours:
-            area = abs(cv2.contourArea(c))
-            if area > area_max:
-                area_max = area
-                area_max_contour = c
-        return area_max_contour, area_max
+        max_color = None
 
-    def _color_to_code(self, color_name):
-        if color_name == "red":
-            return 1
-        if color_name == "green":
-            return 2
-        if color_name == "blue":
-            return 3
-        return 0
-
-    def _code_to_color(self, code):
-        return {1: "red", 2: "green", 3: "blue"}.get(code, "None")
-
-    def preprocess(self, img_bgr):
-        img_resize = cv2.resize(img_bgr, size, interpolation=cv2.INTER_NEAREST)
-        img_blur = cv2.GaussianBlur(img_resize, (11, 11), 11)
-
-        # ROI optimization: if we have ROI from last time, restrict search area
-        if self.get_roi and self.roi is not None:
-            img_blur = getMaskROI(img_blur, self.roi, size)
-            self.get_roi = False  # one-shot mask like the original scripts
-
-        img_lab = cv2.cvtColor(img_blur, cv2.COLOR_BGR2LAB)
-        return img_resize, img_lab
-
-    def segment(self, img_lab, color_name):
-        mask = cv2.inRange(img_lab, color_range[color_name][0], color_range[color_name][1])
-        opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((6, 6), np.uint8))
-        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, np.ones((6, 6), np.uint8))
-        return closed
-
-    def find_best_candidate(self, img_lab):
-        best_color = None
-        best_contour = None
-        best_area = 0
-
-        for c in self.target_colors:
-            if c not in color_range:
+        for color in self.target_colors:
+            if color not in color_range:
                 continue
-            closed = self.segment(img_lab, c)
+
+            frame_mask = cv2.inRange(frame_lab, color_range[color][0], color_range[color][1])
+            opened = cv2.morphologyEx(frame_mask, cv2.MORPH_OPEN, np.ones((6, 6), np.uint8))
+            closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, np.ones((6, 6), np.uint8))
             contours = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2]
 
-            contour, area = self.get_area_max_contour(contours)
-            if contour is not None and area > best_area:
-                best_area = area
-                best_contour = contour
-                best_color = c
+            areaMaxContour, area_max = getAreaMaxContour(contours)
+            if areaMaxContour is not None and area_max > color_area_max:
+                color_area_max = area_max
+                area_max_contour = areaMaxContour
+                max_color = color
 
-        return best_color, best_contour, best_area
+        detection = None
 
-    def compute_pose(self, contour):
-        rect = cv2.minAreaRect(contour)
-        box = np.int0(cv2.boxPoints(rect))
-        roi = getROI(box)
-        img_centerx, img_centery = getCenter(rect, roi, size, square_length)
-        world_x, world_y = convertCoordinate(img_centerx, img_centery, size)
-        return rect, box, roi, world_x, world_y
+        if area_max_contour is not None and max_color is not None:
+            rect = cv2.minAreaRect(area_max_contour)
+            box = np.int0(cv2.boxPoints(rect))
+            cv2.drawContours(frame_resize, [box], -1, range_rgb[max_color], 2)
 
-    def update_color_vote(self, observed_color):
-        code = self._color_to_code(observed_color)
-        if code == 0:
-            return  # ignore unknown
+            self.rotation_angle = rect[2]
+            self.detect_color = max_color
 
-        self.color_votes.append(code)
+            center_x, center_y = rect[0]
+            self.world_x, self.world_y = convertCoordinate(center_x, center_y, size=(640, 480))
+            self.world_X, self.world_Y = self.world_x, self.world_y
 
-        if len(self.color_votes) >= self.vote_len:
-            voted_code = int(round(float(np.mean(np.array(self.color_votes)))))
-            self.color_votes = []
-            self.confirmed_color = self._code_to_color(voted_code)
-            self.draw_color = range_rgb.get(self.confirmed_color, range_rgb.get("black", (0, 0, 0)))
+            self.color_list.append(self.detect_color)
+            self.coordinate_list.append((self.world_X, self.world_Y))
 
-    def update_stability(self, rect, world_x, world_y):
-        if self.last_x is None:
-            self.last_x, self.last_y = world_x, world_y
-            self.t_stable_start = time.time()
-            self.center_list = [world_x, world_y]
-            self.count = 1
-            return False
+            if len(self.coordinate_list) >= 6:
+                self.stable_count += 1
 
-        distance = math.sqrt((world_x - self.last_x) ** 2 + (world_y - self.last_y) ** 2)
-        self.last_x, self.last_y = world_x, world_y
+                if self.stable_count >= 5:
+                    from collections import Counter
+                    most_common = Counter(self.color_list).most_common(1)[0][0]
+                    self.confirmed_color = most_common
 
-        if distance < self.stable_dist:
-            if self.t_stable_start is None:
-                self.t_stable_start = time.time()
+                    xs = [p[0] for p in self.coordinate_list]
+                    ys = [p[1] for p in self.coordinate_list]
+                    self.world_X_avg = float(sum(xs) / len(xs))
+                    self.world_Y_avg = float(sum(ys) / len(ys))
 
-            self.center_list.extend([world_x, world_y])
-            self.count += 1
-
-            if (time.time() - self.t_stable_start) >= self.stable_time:
-                # stable!
-                self.rotation_angle = rect[2]
-                pts = np.array(self.center_list).reshape(self.count, 2)
-                self.world_X_avg, self.world_Y_avg = np.mean(pts, axis=0)
-                return True
-            return False
-
-        # moved too much -> reset stability window
-        self.t_stable_start = time.time()
-        self.center_list = [world_x, world_y]
-        self.count = 1
-        return False
-
-    def process(self, img_bgr):
-        annotated = img_bgr.copy()
-        self.ready = False
-
-        img_resize, img_lab = self.preprocess(img_bgr)
-
-        best_color, best_contour, best_area = self.find_best_candidate(img_lab)
-        if best_contour is None or best_area < self.min_area:
-            # Optional: still show last confirmed color text
-            cv2.putText(
-                annotated,
-                f"Color: {self.confirmed_color}",
-                (10, annotated.shape[0] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                self.draw_color,
-                2,
-            )
-            return annotated, None
-
-        rect, box, roi, world_x, world_y = self.compute_pose(best_contour)
-
-        # Update ROI for next frame
-        self.roi = roi
-        self.get_roi = True
-
-        # Annotate detected box + coords (like ColorTracking)
-        cv2.drawContours(annotated, [box], -1, range_rgb.get(best_color, (255, 255, 255)), 2)
-        cv2.putText(
-            annotated,
-            f"({world_x:.1f},{world_y:.1f})",
-            (min(box[0, 0], box[2, 0]), box[2, 1] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            range_rgb.get(best_color, (255, 255, 255)),
-            1,
-        )
-
-        # Voting update (extra capability)
-        self.update_color_vote(best_color)
-
-        # Stability update (extra capability)
-        stable_now = self.update_stability(rect, world_x, world_y)
-
-        # Decide "ready" (state machine / gating)
-        if stable_now:
-            self.world_x, self.world_y = world_x, world_y
-            if self.require_color_confirm:
-                self.ready = (self.confirmed_color in self.target_colors)
+                    detection = {
+                        "stable": True,
+                        "ready": True,
+                        "confirmed_color": self.confirmed_color,
+                        "world_X_avg": self.world_X_avg,
+                        "world_Y_avg": self.world_Y_avg,
+                        "rotation_angle": float(self.rotation_angle),
+                        "world_x": float(self.world_x),
+                        "world_y": float(self.world_y),
+                    }
+                else:
+                    detection = {
+                        "stable": True,
+                        "ready": False,
+                        "confirmed_color": None,
+                        "world_X_avg": None,
+                        "world_Y_avg": None,
+                        "rotation_angle": float(self.rotation_angle),
+                        "world_x": float(self.world_x),
+                        "world_y": float(self.world_y),
+                    }
             else:
-                self.ready = True
+                detection = {
+                    "stable": False,
+                    "ready": False,
+                    "confirmed_color": None,
+                    "world_X_avg": None,
+                    "world_Y_avg": None,
+                    "rotation_angle": float(self.rotation_angle),
+                    "world_x": float(self.world_x),
+                    "world_y": float(self.world_y),
+                }
+        else:
+            self._reset_stability()
 
-        # Always display confirmed color text
-        cv2.putText(
-            annotated,
-            f"Color: {self.confirmed_color}",
-            (10, annotated.shape[0] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            self.draw_color,
-            2,
-        )
+        return frame_resize, detection
 
-        result = {
-            "best_color_raw": best_color,
-            "confirmed_color": self.confirmed_color,
-            "area": float(best_area),
-            "world_x": float(world_x),
-            "world_y": float(world_y),
-            "rotation_angle": float(rect[2]),
-            "stable": bool(stable_now),
-            "ready": bool(self.ready),
-            "world_X_avg": None if self.world_X_avg is None else float(self.world_X_avg),
-            "world_Y_avg": None if self.world_Y_avg is None else float(self.world_Y_avg),
-        }
-        return annotated, result
 
 if __name__ == '__main__':
     init()
@@ -557,6 +503,25 @@ if __name__ == '__main__':
     my_camera = Camera.Camera()
     my_camera.camera_open()
 
+    # Create Motion ONCE (not inside the loop)
+    motion = Motion()
+    motion.home()
+
+    # Ask user once which operation to run
+    mode_in = input("Select mode: [p]ick_place, [s]ort, s[t]ack : ").strip().lower()
+    if mode_in in ("p", "pick", "pick_place", "pickplace"):
+        mode = "pick_place"
+    elif mode_in in ("t", "stack", "pallet", "palletize", "palletizing"):
+        mode = "stack"
+    else:
+        mode = "sort"
+    print(f"Running mode: {mode}")
+
+    # Prevent repeated triggering while ready stays True
+    busy = False
+
+    ready_prev = False
+
     try:
         while True:
             img = my_camera.frame
@@ -566,9 +531,40 @@ if __name__ == '__main__':
 
             annotated, detection = perception.process(img)
 
+            ready_now = bool(detection and detection.get("ready", False))
+
+            if (not busy) and detection and (not ready_now):
+                wx = detection.get("world_x")
+                wy = detection.get("world_y")
+                if (wx is not None) and (wy is not None):
+                    motion.track(wx, wy)
+
+            if (not busy) and ready_now and (not ready_prev):
+                busy = True
+
+                X = detection["world_X_avg"]
+                Y = detection["world_Y_avg"]
+                rot = detection["rotation_angle"]
+                color = detection["confirmed_color"]
+
+                if mode == "sort":
+                    motion.sort(X, Y, rot, color)
+
+                elif mode == "stack":
+                    motion.stack(X, Y, rot, color)
+
+                else:  # pick_place
+                    # choose a simple fixed destination (you can change this)
+                    dest = (-15 + 0.5, 12 - 0.5, 1.5)
+                    motion.pick_place(X, Y, rot, dest)
+
+                busy = False
+
             # Optional: print stable detection results
-            if detection and detection["stable"]:
+            if detection and detection.get("stable", False):
                 print("Stable:", detection)
+
+            ready_prev = ready_now
 
             cv2.imshow('Perception Demo', annotated)
             key = cv2.waitKey(1) & 0xFF
@@ -579,5 +575,3 @@ if __name__ == '__main__':
         cv2.destroyAllWindows()
         stop()
         exit()
-
-
