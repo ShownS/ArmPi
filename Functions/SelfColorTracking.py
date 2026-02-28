@@ -443,7 +443,7 @@ class Perception:
             self.color_list.append(self.detect_color)
             self.coordinate_list.append((self.world_X, self.world_Y))
 
-            cv2.circle(frame_resize,(int(center_x), int(center_y)),5,range_rgb[max_color],-1)
+            #cv2.circle(frame_resize,(int(center_x), int(center_y)),5,range_rgb[max_color],-1)
 
             cv2.putText(frame_resize,max_color,(int(center_x) + 10, int(center_y)),cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,range_rgb[max_color],2)
