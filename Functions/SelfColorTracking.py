@@ -432,6 +432,9 @@ class Perception:
             rect = cv2.minAreaRect(area_max_contour)
             box = np.int0(cv2.boxPoints(rect))
             cv2.drawContours(frame_resize, [box], -1, range_rgb[max_color], 2)
+            cv2.putText(frame_resize,f"{max_color}",(int(center_x), int(center_y)),cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,range_rgb[max_color],2)
+            cv2.circle(frame_resize,(int(center_x), int(center_y)),5,range_rgb[max_color],-1)
 
             self.rotation_angle = rect[2]
             self.detect_color = max_color
