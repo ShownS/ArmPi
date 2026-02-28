@@ -445,7 +445,7 @@ class Perception:
 
             #cv2.circle(frame_resize,(int(center_x), int(center_y)),5,range_rgb[max_color],-1)
 
-            cv2.putText(frame_resize,max_color,(int(center_x) + 10, int(center_y)),cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(frame_resize,f"{max_color}, {int(self.world_X)}, {int(self.world_Y)}",(int(center_x) + 10, int(center_y)),cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,range_rgb[max_color],2)
 
             if len(self.coordinate_list) >= 6:
