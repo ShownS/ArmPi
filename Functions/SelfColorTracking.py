@@ -569,8 +569,8 @@ if __name__ == '__main__':
                 busy = False
 
             # Optional: print stable detection results
-            if detection and detection.get("stable", False):
-                print("Stable:", detection)
+            # if detection and detection.get("stable", False):
+            #     print("Stable:", detection)
 
             ready_prev = ready_now
 
