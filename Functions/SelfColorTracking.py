@@ -508,14 +508,14 @@ if __name__ == '__main__':
     motion.home()
 
     # Ask user once which operation to run
-    mode_in = input("Select mode: [p]ick_place, [s]ort, s[t]ack : ").strip().lower()
-    if mode_in in ("p", "pick", "pick_place", "pickplace"):
-        mode = "pick_place"
-    elif mode_in in ("t", "stack", "pallet", "palletize", "palletizing"):
-        mode = "stack"
-    else:
-        mode = "sort"
-    print(f"Running mode: {mode}")
+    # mode_in = input("Select mode: [p]ick_place, [s]ort, s[t]ack : ").strip().lower()
+    # if mode_in in ("p", "pick", "pick_place", "pickplace"):
+    #     mode = "pick_place"
+    # elif mode_in in ("t", "stack", "pallet", "palletize", "palletizing"):
+    #     mode = "stack"
+    # else:
+    #     mode = "sort"
+    # print(f"Running mode: {mode}")
 
     # Prevent repeated triggering while ready stays True
     busy = False
@@ -533,41 +533,41 @@ if __name__ == '__main__':
 
             ready_now = bool(detection and detection.get("ready", False))
 
-            if (not busy) and detection and (not ready_now):
-                wx = detection.get("world_x")
-                wy = detection.get("world_y")
-                # if (wx is not None) and (wy is not None):
-                    # motion.track(wx, wy)
+            # if (not busy) and detection and (not ready_now):
+            #     wx = detection.get("world_x")
+            #     wy = detection.get("world_y")
+            #     # if (wx is not None) and (wy is not None):
+            #         # motion.track(wx, wy)
 
-            if (not busy) and ready_now and (not ready_prev):
-                busy = True
+            # if (not busy) and ready_now and (not ready_prev):
+            #     busy = True
 
-                X = detection["world_X_avg"]
-                Y = detection["world_Y_avg"]
-                rot = detection["rotation_angle"]
-                color = detection["confirmed_color"]
+            #     X = detection["world_X_avg"]
+            #     Y = detection["world_Y_avg"]
+            #     rot = detection["rotation_angle"]
+            #     color = detection["confirmed_color"]
 
-                if mode == "sort":
-                    motion.sort(X, Y, rot, color)
+            #     if mode == "sort":
+            #         motion.sort(X, Y, rot, color)
 
 
-                elif mode == "stack":
-                    motion.stack(X, Y, rot, color)
+            #     elif mode == "stack":
+            #         motion.stack(X, Y, rot, color)
 
-                else:  # pick_place
-                    # choose a simple fixed destination (you can change this)
-                    dest = (-15 + 0.5, 12 - 0.5, 1.5)
-                    motion.pick_place(X, Y, rot, dest)
-                # after motion finishes
-                perception._reset_stability()
-                ready_prev = False
-                busy = False
+            #     else:  # pick_place
+            #         # choose a simple fixed destination (you can change this)
+            #         dest = (-15 + 0.5, 12 - 0.5, 1.5)
+            #         motion.pick_place(X, Y, rot, dest)
+            #     # after motion finishes
+            #     perception._reset_stability()
+            #     ready_prev = False
+            #     busy = False
 
-            # Optional: print stable detection results
-            if detection and detection.get("stable", False):
-                print("Stable:", detection)
+            # # Optional: print stable detection results
+            # if detection and detection.get("stable", False):
+            #     print("Stable:", detection)
 
-            ready_prev = ready_now
+            # ready_prev = ready_now
 
             cv2.imshow('Perception Demo', annotated)
             key = cv2.waitKey(1) & 0xFF
