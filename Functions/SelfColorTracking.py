@@ -509,18 +509,18 @@ if __name__ == '__main__':
     my_camera.camera_open()
 
     # Create Motion ONCE (not inside the loop)
-    # motion = Motion()
-    # motion.home()
+    motion = Motion()
+    motion.home()
 
-    # # Ask user once which operation to run
-    # mode_in = input("Select mode: [p]ick_place, [s]ort, s[t]ack : ").strip().lower()
-    # if mode_in in ("p", "pick", "pick_place", "pickplace"):
-    #     mode = "pick_place"
-    # elif mode_in in ("t", "stack", "pallet", "palletize", "palletizing"):
-    #     mode = "stack"
-    # else:
-    #     mode = "sort"
-    # print(f"Running mode: {mode}")
+    # Ask user once which operation to run
+    mode_in = input("Select mode: [p]ick_place, [s]ort, s[t]ack : ").strip().lower()
+    if mode_in in ("p", "pick", "pick_place", "pickplace"):
+        mode = "pick_place"
+    elif mode_in in ("t", "stack", "pallet", "palletize", "palletizing"):
+        mode = "stack"
+    else:
+        mode = "sort"
+    print(f"Running mode: {mode}")
 
     # Prevent repeated triggering while ready stays True
     busy = False
@@ -552,17 +552,17 @@ if __name__ == '__main__':
                 rot = detection["rotation_angle"]
                 color = detection["confirmed_color"]
 
-                # if mode == "sort":
-                #     motion.sort(X, Y, rot, color)
+                if mode == "sort":
+                    motion.sort(X, Y, rot, color)
 
 
-                # elif mode == "stack":
-                #     motion.stack(X, Y, rot, color)
+                elif mode == "stack":
+                    motion.stack(X, Y, rot, color)
 
-                # else:  # pick_place
-                #     # choose a simple fixed destination (you can change this)
-                #     dest = (-15 + 0.5, 12 - 0.5, 1.5)
-                #     motion.pick_place(X, Y, rot, dest)
+                else:  # pick_place
+                    # choose a simple fixed destination (you can change this)
+                    dest = (-15 + 0.5, 12 - 0.5, 1.5)
+                    motion.pick_place(X, Y, rot, dest)
                 # after motion finishes
                 perception._reset_stability()
                 ready_prev = False
