@@ -58,7 +58,7 @@ servo1 = 500
 def initMove():
     Board.setBusServoPulse(1,280,500)
     time.sleep(2)
-    Board.setBusServoPulse(1, 500, 500)
+    Board.setBusServoPulse(1, 550, 500)
     Board.setBusServoPulse(2, 500, 500)
     Board.setBusServoPulse(3, 500, 500)
     Board.setBusServoPulse(4, 500, 500)
@@ -68,7 +68,7 @@ def initMove():
     Board.setBusServoPulse(5,720,200)
     time.sleep(1.5)
     Board.setBusServoPulse(5,400,100)
-    time.sleep(0.1)
+    time.sleep(0.15)
     Board.setBusServoPulse(1,280,0)
 
 def setBuzzer(timer):
