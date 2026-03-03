@@ -63,6 +63,10 @@ def initMove():
     Board.setBusServoPulse(5, 500, 500)
     Board.setBusServoPulse(6, 500, 500)
 
+    Board.setBusServoPulse(1,280,500)
+    Board.setBusServoPulse(6,280,500)
+
+
 def setBuzzer(timer):
     Board.setBuzzer(0)
     Board.setBuzzer(1)
@@ -377,3 +381,5 @@ def run(img):
 if __name__ == '__main__':
     init()
     start()
+
+    
