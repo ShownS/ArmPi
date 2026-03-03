@@ -59,7 +59,7 @@ def initMove():
     Board.setBusServoPulse(1,280,500)
     Board.setBusServoPulse(5,500,500)
     time.sleep(2)
-    Board.setBusServoPulse(1, 600, 2000)
+    Board.setBusServoPulse(1, 650, 2000)
     Board.setBusServoPulse(2, 500, 2000)
     Board.setBusServoPulse(3, 500, 2000)
     Board.setBusServoPulse(4, 500, 2000)
