@@ -395,5 +395,5 @@ if __name__ == '__main__':
     Board.setBusServoPulse(5,475,100)
     time.sleep(0.16)
     # Release block
-    Board.setBusServoPulse(1,150,0)
+    Board.setBusServoPulse(1,250,0)
     
