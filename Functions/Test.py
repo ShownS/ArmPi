@@ -56,21 +56,9 @@ servo1 = 500
 
 # 初始位置
 def initMove():
-    Board.setBusServoPulse(1,280,500)
-    Board.setBusServoPulse(5,500,500)
-    time.sleep(2)
-    Board.setBusServoPulse(1, 650, 2000)
-    Board.setBusServoPulse(2, 500, 2000)
-    Board.setBusServoPulse(3, 500, 2000)
-    Board.setBusServoPulse(4, 500, 2000)
-    Board.setBusServoPulse(5, 500, 2000)
-    Board.setBusServoPulse(6, 500, 2000)
-    time.sleep(5)
-    Board.setBusServoPulse(5,720,200)
-    time.sleep(1.5)
-    Board.setBusServoPulse(5,475,100)
-    time.sleep(0.16)
-    Board.setBusServoPulse(1,150,0)
+    Board.setBusServoPulse(1, servo1 - 50, 300)
+    Board.setBusServoPulse(2, 500, 500)
+    AK.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)
 
 def setBuzzer(timer):
     Board.setBuzzer(0)
@@ -387,4 +375,25 @@ if __name__ == '__main__':
     init()
     start()
 
+    # Move to straight up position and wait 3 seconds
+    Board.setBusServoPulse(1, 280, 2000)
+    Board.setBusServoPulse(2, 500, 2000)
+    Board.setBusServoPulse(3, 500, 2000)
+    Board.setBusServoPulse(4, 500, 2000)
+    Board.setBusServoPulse(5, 500, 2000)
+    Board.setBusServoPulse(6, 500, 2000)
+    time.sleep(3)
+    # Grab block
+    Board.setBusServoPulse(1, 650, 2000)
+    time.sleep(2)
+    # Move back slowly
+    for i in range(500,721):
+        Board.setBusServoPulse(5,i,0)
+        time.sleep(0.05)
+    time.sleep(1.5)
+    # Throw
+    Board.setBusServoPulse(5,475,100)
+    time.sleep(0.16)
+    # Release block
+    Board.setBusServoPulse(1,150,0)
     
