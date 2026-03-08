@@ -382,18 +382,7 @@ if __name__ == '__main__':
     Board.setBusServoPulse(4, 500, 2000)
     Board.setBusServoPulse(5, 500, 2000)
     Board.setBusServoPulse(6, 500, 2000)
-    time.sleep(3)
-    # Grab block
-    Board.setBusServoPulse(1, 400, 2000)
     time.sleep(2)
-    # Move back slowly
-    for i in range(500,801,5):
-        Board.setBusServoPulse(5,i,0)
-        time.sleep(0.05)
-    time.sleep(1.5)
-    # Throw
-    Board.setBusServoPulse(5,475,100)
-    time.sleep(0.23)
-    # Release block
-    Board.setBusServoPulse(1,150,0)
+    Board.setBusServoPulse(1,500,200)
+    Board.setBusServoPulse(4,700,200)
     
