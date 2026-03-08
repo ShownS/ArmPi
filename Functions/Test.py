@@ -384,5 +384,5 @@ if __name__ == '__main__':
     Board.setBusServoPulse(6, 500, 2000)
     time.sleep(2)
     Board.setBusServoPulse(1,500,200)
-    Board.setBusServoPulse(4,700,200)
+    Board.setBusServoPulse(3,700,200)
     
