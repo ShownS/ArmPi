@@ -391,6 +391,7 @@ if __name__ == '__main__':
     time.sleep(1)
     for i in range(500,801,5):
         Board.setBusServoPulse(5,i,0)
+        Board.setBusServoPulse(1,750,2000)
         time.sleep(0.05)
     time.sleep(2)
     Board.setBusServoPulse(5,500,0)
