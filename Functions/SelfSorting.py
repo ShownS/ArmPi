@@ -227,7 +227,7 @@ class Perception:
         self.world_X_avg = None
         self.world_Y_avg = None
 
-    def _reset_stability(self):
+    def reset(self):
         self.color_list = []
         self.coordinate_list = []
         self.stable_count = 0
@@ -330,7 +330,7 @@ class Perception:
                     "world_y": float(self.world_y),
                 }
         else:
-            self._reset_stability()
+            self.reset()
 
         return frame_resize, detection
 
