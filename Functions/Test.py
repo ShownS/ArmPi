@@ -383,7 +383,14 @@ if __name__ == '__main__':
     Board.setBusServoPulse(5, 500, 2000)
     Board.setBusServoPulse(6, 500, 2000)
     time.sleep(2)
-    Board.setBusServoPulse(5,300,2000)
-    Board.setBusServoPulse(4,900,2000)
-    Board.setBusServoPulse(3,700,2000)
-    Board.setBusServoPulse(2,800,2000)
+    # Board.setBusServoPulse(5,300,2000)
+    # Board.setBusServoPulse(4,900,2000)
+    # Board.setBusServoPulse(3,700,2000)
+    # Board.setBusServoPulse(2,800,2000)
+    Board.setBusServoPulse(1,500,2000)
+    time.sleep(1)
+    for i in range(500,701,5):
+        Board.setBusServoPulse(5,i,0)
+        time.sleep(0.05)
+    Board.setBusServoPulse(5,500,0)
+
